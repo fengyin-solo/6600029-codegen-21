@@ -21,8 +21,13 @@ export interface NoFlyZone {
   name: string;
   center: [number, number];
   radius: number;  // meters
-  type: 'airport' | 'military' | 'restricted';
+  type: 'airport' | 'military' | 'restricted' | 'temporary';
+  isTemporary?: boolean;
+  createdAt?: number;
+  description?: string;
 }
+
+export type NoFlyZoneType = NoFlyZone['type'];
 
 export interface TerrainPoint {
   lat: number;

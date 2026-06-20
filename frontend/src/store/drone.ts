@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import type { Waypoint, NoFlyZone, TerrainPoint, FlightPlan, DroneConfig } from '../types';
+import { ref, computed, watch } from 'vue';
+import type { Waypoint, NoFlyZone, TerrainPoint, FlightPlan, DroneConfig, NoFlyZoneType } from '../types';
 import {
   aStarPathfind,
   rrtPathfind,
@@ -21,6 +21,8 @@ export const useDroneStore = defineStore('drone', () => {
   const isSimulating = ref(false);
   const simProgress = ref(0);
   const mapCenter = ref<[number, number]>([39.9, 116.4]);
+  const autoReplan = ref(true);
+  const editingZoneId = ref<string | null>(null);
 
   const droneConfig = ref<DroneConfig>({
     maxAltitude: 500,
@@ -98,8 +100,76 @@ export const useDroneStore = defineStore('drone', () => {
     }, 50);
   }
 
+  function addNoFlyZone(
+    center: [number, number],
+    radius: number,
+    name?: string,
+    type: NoFlyZoneType = 'temporary',
+    description?: string
+  ): NoFlyZone {
+    const id = `nfz-temp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const zoneName = name || `临时禁飞区 ${noFlyZones.value.filter(z => z.isTemporary).length + 1}`;
+    const zone: NoFlyZone = {
+      id,
+      name: zoneName,
+      center,
+      radius,
+      type,
+      isTemporary: type === 'temporary',
+      createdAt: Date.now(),
+      description,
+    };
+    noFlyZones.value.push(zone);
+    return zone;
+  }
+
+  function updateNoFlyZone(id: string, updates: Partial<NoFlyZone>) {
+    const zone = noFlyZones.value.find((z) => z.id === id);
+    if (zone) {
+      Object.assign(zone, updates);
+    }
+  }
+
+  function removeNoFlyZone(id: string) {
+    const idx = noFlyZones.value.findIndex((z) => z.id === id);
+    if (idx !== -1) {
+      noFlyZones.value.splice(idx, 1);
+    }
+    if (editingZoneId.value === id) {
+      editingZoneId.value = null;
+    }
+  }
+
+  function clearTemporaryZones() {
+    noFlyZones.value = noFlyZones.value.filter((z) => !z.isTemporary);
+    editingZoneId.value = null;
+  }
+
+  function setEditingZone(id: string | null) {
+    editingZoneId.value = id;
+  }
+
+  function toggleAutoReplan() {
+    autoReplan.value = !autoReplan.value;
+  }
+
+  function replanRouteIfNeeded() {
+    if (autoReplan.value && waypoints.value.length >= 2 && !isSimulating.value) {
+      const first = waypoints.value[0];
+      const last = waypoints.value[waypoints.value.length - 1];
+      planRoute([first.lat, first.lng], [last.lat, last.lng]);
+    }
+  }
+
+  watch(
+    () => noFlyZones.value.length,
+    () => {
+      replanRouteIfNeeded();
+    }
+  );
+
   function loadMockData() {
-    noFlyZones.value = mockNoFlyZones;
+    noFlyZones.value = [...mockNoFlyZones];
     terrainData.value = mockTerrainData;
   }
 
@@ -146,6 +216,14 @@ export const useDroneStore = defineStore('drone', () => {
     });
   });
 
+  const temporaryZones = computed(() =>
+    noFlyZones.value.filter((z) => z.isTemporary)
+  );
+
+  const permanentZones = computed(() =>
+    noFlyZones.value.filter((z) => !z.isTemporary)
+  );
+
   return {
     waypoints,
     noFlyZones,
@@ -156,10 +234,14 @@ export const useDroneStore = defineStore('drone', () => {
     isSimulating,
     simProgress,
     mapCenter,
+    autoReplan,
+    editingZoneId,
     totalDistance,
     estimatedTime,
     batteryPercent,
     terrainProfile,
+    temporaryZones,
+    permanentZones,
     addWaypoint,
     removeWaypoint,
     updateWaypoint,
@@ -169,5 +251,12 @@ export const useDroneStore = defineStore('drone', () => {
     loadMockData,
     exportPlan,
     updatePlan,
+    addNoFlyZone,
+    updateNoFlyZone,
+    removeNoFlyZone,
+    clearTemporaryZones,
+    setEditingZone,
+    toggleAutoReplan,
+    replanRouteIfNeeded,
   };
 });
